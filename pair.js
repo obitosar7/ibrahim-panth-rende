@@ -1,111 +1,63 @@
-const PastebinAPI = require('pastebin-js'),
-pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
-const {makeid} = require('./id');
 const express = require('express');
 const fs = require('fs');
-let router = express.Router()
-const pino = require("pino");
-const {
-default: France_King,
-useMultiFileAuthState,
-delay,
-makeCacheableSignalKeyStore,
-Browsers
-} = require("@whiskeysockets/baileys");
+const pino = require('pino');
+const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, delay } = require('@whiskeysockets/baileys');
+const { makeid } = require('./id'); // مولد ID عشوائي
 
-function removeFile(FilePath){
-if(!fs.existsSync(FilePath)) return false;
-fs.rmSync(FilePath, { recursive: true, force: true })
-};
+const router = express.Router();
+
+function removeFile(path) {
+  if (fs.existsSync(path)) fs.rmSync(path, { recursive: true, force: true });
+}
+
 router.get('/', async (req, res) => {
-const id = makeid();
-let num = req.query.number;
-async function FLASH_MD_PAIR_CODE() {
-const {
-state,
-saveCreds
-} = await useMultiFileAuthState('./temp/'+id)
-try {
-let Pair_Code_By_France_King = France_King({
-auth: {
-creds: state.creds,
-keys: makeCacheableSignalKeyStore(state.keys, pino({level: "fatal"}).child({level: "fatal"})),
-},
-printQRInTerminal: false,
-logger: pino({level: "fatal"}).child({level: "fatal"}),
-browser: ["Chrome (Linux)", "", ""]
+  const number = (req.query.number || '').replace(/[^0-9]/g, '');
+  if (!number) return res.status(400).json({ error: 'رقم غير صحيح' });
+
+  const id = makeid();
+  const path = './temp/' + id;
+
+  const { state, saveCreds } = await useMultiFileAuthState(path);
+
+  try {
+    const sock = makeWASocket({
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+      },
+      logger: pino({ level: 'silent' }),
+      printQRInTerminal: false,
+      browser: ['Chrome', '', ''],
+    });
+
+    if (!sock.authState.creds.registered) {
+      const code = await sock.requestPairingCode(number);
+      sock.ev.on('creds.update', saveCreds);
+
+      sock.ev.on('connection.update', async ({ connection }) => {
+        if (connection === 'open') {
+          const credsPath = `${path}/creds.json`;
+          if (fs.existsSync(credsPath)) {
+            const data = fs.readFileSync(credsPath);
+            const b64 = Buffer.from(data).toString('base64');
+            res.json({ code, session: b64 });
+            await delay(1000);
+            await sock.ws.close();
+            removeFile(path);
+          }
+        }
+      });
+
+      // Send pairing code immediately
+      if (!res.headersSent) res.json({ code });
+    } else {
+      res.json({ error: 'الحساب مسجل بالفعل' });
+    }
+  } catch (err) {
+    console.error(err);
+    removeFile(path);
+    if (!res.headersSent) res.json({ error: 'خطأ أثناء محاولة الاتصال' });
+  }
 });
-if(!Pair_Code_By_France_King.authState.creds.registered) {
-await delay(1500);
-num = num.replace(/[^0-9]/g,'');
-const code = await Pair_Code_By_France_King.requestPairingCode(num)
-if(!res.headersSent){
-await res.send({code});
-}
-}
-Pair_Code_By_France_King.ev.on('creds.update', saveCreds)
-Pair_Code_By_France_King.ev.on("connection.update", async (s) => {
-const {
-connection,
-lastDisconnect
-} = s;
-if (connection == "open") {
-await delay(5000);
-let data = fs.readFileSync(__dirname + /temp/${id}/creds.json);
-await delay(800);
-let b64data = Buffer.from(data).toString('base64');
-let session = await Pair_Code_By_France_King.sendMessage(Pair_Code_By_France_King.user.id, { text: ''+ b64data });
 
-let FLASH_MD_TEXT = `
-
-𝕰𝖊𝖊𝖞... 𝖙𝖔𝖕𝖚 𝖉𝖒𝖍 𝖍𝖆𝖘 𝖏𝖚𝖘𝖙 𝖈𝖔𝖓𝖓𝖊𝖈𝖙𝖊𝖉 𝖙𝖍𝖊 𝖘𝖊𝖘𝖘𝖎𝖔𝖓 𝖎𝖉
-Wow you choosen TOPU-MD complete the deployment and enyoy the speed
-
-
----
-
-╔════◇
-║『 *TOPU AI IS READY TO DEPLOY』
-║ YOUR SESSION IS READY. COPY IT
-║ AND HOST IT ON YOUR WEB.
-╚════════════════════╝
-╔═════◇
-║ 『••• OWNER INFO •••』
-
-║ ❒ 𝐎wner: https://wa.me/message/5WRTCPHFKUGFM1
-
-║ ❒ 𝐑𝐞𝐩𝐨: https://github.com/Toputech/Topu-ai
-
-║ ❒ 𝐖𝐚𝐆𝐫𝐨𝐮𝐩: https://chat.whatsapp.com/BxelCdrHnDYBNfMy2jafgI
-
-║ ❒ 𝐖𝐚𝐂𝐡𝐚𝐧𝐧𝐞𝐥: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r
-║
-╚════════════════════╝
-©TOPU TECH
-
-
----
-
-Don't Forget To Give Star To My Repo_`
-await Pair_Code_By_France_King.sendMessage(Pair_Code_By_France_King.user.id,{text:FLASH_MD_TEXT},{quoted:session})
-
-await delay(100);  
-    await Pair_Code_By_France_King.ws.close();  
-    return await removeFile('./temp/'+id);  
-        } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {  
-                await delay(10000);  
-                FLASH_MD_PAIR_CODE();  
-            }  
-        });  
-    } catch (err) {  
-        console.log("service restated");  
-        await removeFile('./temp/'+id);  
-     if(!res.headersSent){  
-        await res.send({code:"Service is Currently Unavailable"});  
-     }  
-    }  
-}  
-return await FLASH_MD_PAIR_CODE()
-
-});
-module.exports = router
+module.exports = router;
